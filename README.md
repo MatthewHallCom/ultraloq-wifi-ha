@@ -12,7 +12,7 @@ A Home Assistant custom component to integrate Ultraloq Wifi smart locks. This h
 2. Add this repository as a custom repository in HACS:
    - Go to HACS > Integrations
    - Click the three dots menu > Custom repositories
-   - Add `https://github.com/matt/ultraloq-wifi-ha` as Integration
+   - Add `https://github.com/MatthewHallCom/ultraloq-wifi-ha` as Integration
 3. Find and install "Ultraloq Wifi for Home Assistant"
 4. Restart Home Assistant
 5. Add the integration through Configuration > Integrations

@@ -1,18 +1,14 @@
 {
   "domain": "ultraloq_wifi",
-  "name": "Ultraloq Wifi for Home Assistant",
+  "name": "Ultraloq Wifi",
   "config_flow": true,
-  "documentation": "https://github.com/matt/ultraloq-wifi-ha",
-  "requirements": [
-    "aiohttp>=3.8.0"
-  ],
+  "documentation": "https://github.com/MatthewHallCom/ultraloq-wifi-ha",
+  "requirements": ["aiohttp>=3.8.0"],
   "ssdp": [],
   "zeroconf": [],
   "homekit": {},
   "dependencies": [],
-  "codeowners": [
-    "@matt"
-  ],
+  "codeowners": ["@MatthewHallCom"],
   "iot_class": "cloud_polling",
   "version": "1.0.0"
 }

@@ -34,4 +34,4 @@ The integration uses the config flow for setup. You'll need:
 
 ## Support
 
-For issues and feature requests, please visit the [GitHub repository](https://github.com/matt/ultraloq-wifi-ha).
+For issues and feature requests, please visit the [GitHub repository](https://github.com/MatthewHallCom/ultraloq-wifi-ha).
