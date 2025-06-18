@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ultraloq Wifi Setup",
+        "description": "Please enter your Ultraloq account credentials",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "address": {
+        "title": "Select Address",
+        "description": "Please select the address/location for your Ultraloq devices",
+        "data": {
+          "address_id": "Address"
+        }
+      }
+    },
+    "error": {
+      "auth_failed": "Authentication failed",
+      "invalid_auth": "Invalid email or password",
+      "cannot_connect": "Unable to connect to Ultraloq servers",
+      "unknown": "Unknown error occurred"
+    },
+    "abort": {
+      "already_configured": "Account is already configured",
+      "no_api_client": "API client not available",
+      "no_addresses": "No addresses found for this account",
+      "cannot_get_addresses": "Failed to retrieve addresses"
+    }
+  }
+}
