@@ -116,7 +116,7 @@ class UltraloqLock(UltraloqEntity, LockEntity):
 
         _LOGGER.info("Locking %s", self._device_uuid)
         try:
-            await self.coordinator.api_client.toggle_lock(self._device_uuid)
+            await self.coordinator.api_client.lock(self._device_uuid, self.coordinator.address_id)
             # Request immediate refresh to update state
             await self.coordinator.async_request_refresh()
         except Exception as err:
@@ -132,7 +132,7 @@ class UltraloqLock(UltraloqEntity, LockEntity):
 
         _LOGGER.info("Unlocking %s", self._device_uuid)
         try:
-            await self.coordinator.api_client.toggle_lock(self._device_uuid)
+            await self.coordinator.api_client.unlock(self._device_uuid, self.coordinator.address_id)
             # Request immediate refresh to update state
             await self.coordinator.async_request_refresh()
         except Exception as err:

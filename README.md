@@ -4,6 +4,8 @@
 
 A Home Assistant custom component to integrate Ultraloq Wifi smart locks. This has only been tested with the ULTRALOQ U-Bolt Smart Lock + Brdige WiFi Adapter.
 
+**Note: Right now this only reports the lock status, we have not been able to get locking & unlocking to work yet**
+
 ## Installation
 
 ### HACS (Recommended)

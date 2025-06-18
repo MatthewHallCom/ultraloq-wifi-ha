@@ -13,6 +13,7 @@ from .const import (
     APP_ID,
     CLIENT_ID,
     DEVICE_LIST_URL,
+    DEVICE_ONLINE_CHECK_URL,
     DEVICE_STATUS_URL,
     DEVICE_TOGGLE_URL,
     LOGIN_URL,
@@ -299,6 +300,7 @@ class UltraloqApiClient:
                 
                 # Filter for U-Bolt model locks
                 if model == "U-Bolt":
+                    user_data = device.get("user", {})
                     # Extract the lock information we need
                     lock_info = {
                         "uuid": device.get("uuid"),
@@ -307,12 +309,31 @@ class UltraloqApiClient:
                         "status": device.get("status"),
                         "params": device.get("params", {}),
                         "bridge": device.get("bridge", {}),
-                        "user": device.get("user", {}),
+                        "user": user_data,
+                        "user_uid": user_data.get("uid"),  # Store the user UID for lock commands
                         "entry_id": entry.get("id"),  # Store the parent entry ID
                     }
                     locks.append(lock_info)
         
         return locks
+
+    async def get_device_user_uid(self, uuid: str, address_id: int) -> int:
+        """Get the user UID for a specific device UUID."""
+        device_data = await self.get_devices(address_id)
+        
+        # Search through all entries and devices to find the matching UUID
+        for entry in device_data:
+            devices = entry.get("devices", [])
+            for device in devices:
+                if device.get("uuid") == uuid:
+                    user_data = device.get("user", {})
+                    user_uid = user_data.get("uid")
+                    if user_uid is not None:
+                        return user_uid
+                    else:
+                        raise UltraloqApiError(f"No user UID found for device {uuid}")
+        
+        raise UltraloqApiError(f"Device {uuid} not found")
 
     async def get_lock_status(self, uuid: str) -> dict[str, Any]:
         """Get real-time status of a specific lock."""
@@ -371,21 +392,136 @@ class UltraloqApiClient:
             _LOGGER.error("Network error getting lock status: %s", err)
             raise UltraloqApiError(f"Network error: {err}") from err
 
-    async def toggle_lock(self, uuid: str) -> bool:
-        """Toggle lock state (lock/unlock)."""
+    async def check_lock_online(self, uuid: str) -> dict[str, Any]:
+        """Check if lock is online (both BLE and remote connectivity)."""
         if not self._api_token:
             raise UltraloqAuthError("Not authenticated - no API token")
 
         headers = {
             **self._default_headers,
-            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
         }
 
-        # Prepare form data with UUID
+        # Create form data with JSON-encoded UUID
         form_data = {
             "token": self._api_token,
-            "data": json.dumps({"uuid": uuid}),
+            "data": json.dumps({"uuid": uuid})
         }
+
+        _LOGGER.debug("Check lock online request URL: %s", DEVICE_ONLINE_CHECK_URL)
+        _LOGGER.debug("Check lock online request data: %s", form_data)
+
+        try:
+            async with self._session.post(
+                DEVICE_ONLINE_CHECK_URL,
+                data=form_data,
+                headers=headers,
+            ) as response:
+                _LOGGER.debug("Check lock online response status: %s", response.status)
+                
+                if response.status == 200:
+                    response_text = await response.text()
+                    _LOGGER.debug("Check lock online response body: %s", response_text)
+                    
+                    try:
+                        result = await response.json()
+                        _LOGGER.debug("Check lock online parsed JSON: %s", result)
+                        
+                        if result.get("code") == 200:
+                            data = result.get("data", {})
+                            ble_online = data.get("ble", 0) == 1
+                            remote_online = data.get("remote", 0) == 1
+                            
+                            return {
+                                "ble_online": ble_online,
+                                "remote_online": remote_online,
+                                "is_online": ble_online and remote_online,
+                                "raw_data": data
+                            }
+                        else:
+                            _LOGGER.error("Check lock online failed with code %s", result.get("code"))
+                            raise UltraloqApiError(f"Check lock online failed: {result.get('description', 'Unknown error')}")
+                    except Exception as json_err:
+                        _LOGGER.error("Failed to parse online check response JSON: %s", json_err)
+                        raise UltraloqApiError(f"Invalid online check response format: {response_text[:100]}")
+                else:
+                    response_text = await response.text()
+                    _LOGGER.error("Check lock online request failed with status %s: %s", response.status, response_text[:200])
+                    raise UltraloqApiError(f"Check lock online request failed with status {response.status}")
+
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Network error checking lock online status: %s", err)
+            raise UltraloqApiError(f"Network error: {err}") from err
+
+
+    async def lock(self, uuid: str, address_id: int) -> bool:
+        """Lock the device."""
+        return await self._send_lock_command(uuid, address_id, "lock/lock", "LOCK")
+
+    async def unlock(self, uuid: str, address_id: int) -> bool:
+        """Unlock the device."""
+        return await self._send_lock_command(uuid, address_id, "lock/unlock", "UNLOCK")
+
+    async def _send_lock_command(self, uuid: str, address_id: int, topic: str, action: str) -> bool:
+        """Send a specific lock command (lock or unlock)."""
+        if not self._api_token:
+            raise UltraloqAuthError("Not authenticated - no API token")
+
+        # Check if lock is online before attempting command
+        try:
+            online_status = await self.check_lock_online(uuid)
+            if not online_status.get("is_online", False):
+                ble_online = online_status.get("ble_online", False)
+                remote_online = online_status.get("remote_online", False)
+                _LOGGER.error("Lock is not online - BLE: %s, Remote: %s", ble_online, remote_online)
+                raise UltraloqApiError(f"Lock is not online (BLE: {ble_online}, Remote: {remote_online})")
+            else:
+                _LOGGER.debug("Lock is online - proceeding with %s", action)
+        except UltraloqApiError:
+            raise
+        except Exception as online_err:
+            _LOGGER.warning("Could not check lock online status: %s - proceeding anyway", online_err)
+
+        headers = {
+            "connection": "keep-alive",
+            "platform": "2",
+            "x-stage": "Release",
+            "x-api-version": "3.3", 
+            "x-build": "Release",
+            "user-agent": USER_AGENT,
+            "content-type": "application/x-www-form-urlencoded; charset=utf-8",
+            "accept-encoding": "gzip",
+        }
+
+        # Get the user UID for this device
+        try:
+            user_uid = await self.get_device_user_uid(uuid, address_id)
+            _LOGGER.debug("Using user UID %s for device %s", user_uid, uuid)
+        except Exception as uid_err:
+            _LOGGER.error("Could not get user UID for device %s: %s", uuid, uid_err)
+            raise UltraloqApiError(f"Could not get user UID for device: {uid_err}")
+
+        # Create lock command data
+        import time
+        command_data = {
+            "device_uuid": uuid,
+            "payload": {
+                "param": str(user_uid),  # Use the actual user UID from device data
+                "info": 8
+            },
+            "timestamp": int(time.time()),
+            "topic": topic
+        }
+        
+        form_data = {
+            "token": self._api_token,
+            "data": json.dumps(command_data)
+        }
+
+        _LOGGER.debug("%s request URL: %s", action, DEVICE_TOGGLE_URL)
+        _LOGGER.debug("%s request data: %s", action, command_data)
+        print(f"DEBUG: {action} request URL: {DEVICE_TOGGLE_URL}")
+        print(f"DEBUG: {action} request data: {command_data}")
 
         try:
             async with self._session.post(
@@ -393,20 +529,69 @@ class UltraloqApiClient:
                 data=form_data,
                 headers=headers,
             ) as response:
+                _LOGGER.debug("%s response status: %s", action, response.status)
+                print(f"DEBUG: {action} response status: {response.status}")
+                
                 if response.status == 200:
-                    result = await response.json()
-                    if result.get("code") == 200:
-                        _LOGGER.debug("Lock toggle successful for %s", uuid)
-                        return True
-                    else:
-                        _LOGGER.error("Lock toggle failed with code %s for %s", result.get("code"), uuid)
-                        raise UltraloqApiError(f"Lock toggle failed: {result.get('description', 'Unknown error')}")
+                    response_text = await response.text()
+                    _LOGGER.debug("%s response body: %s", action, response_text)
+                    print(f"DEBUG: {action} response body: {response_text}")
+                    
+                    try:
+                        result = await response.json()
+                        _LOGGER.debug("%s parsed JSON: %s", action, result)
+                        print(f"DEBUG: {action} parsed JSON: {result}")
+                        
+                        if result.get("code") == 200:
+                            _LOGGER.debug("%s API call successful for %s", action, uuid)
+                            print(f"DEBUG: {action} API call successful for {uuid}")
+                            
+                            # Wait a moment and verify the state actually changed
+                            import asyncio
+                            await asyncio.sleep(2)
+                            
+                            try:
+                                current_status = await self.get_lock_status(uuid)
+                                _LOGGER.debug("Lock status after %s: %s", action, current_status)
+                                print(f"DEBUG: Lock status after {action}: {current_status}")
+                                
+                                # Verify the lock state matches the expected action
+                                expected_locked = (action == "LOCK")
+                                actual_locked = current_status.get("is_locked", False)
+                                
+                                if actual_locked == expected_locked:
+                                    _LOGGER.debug("%s command succeeded - lock state is correct", action)
+                                    print(f"DEBUG: {action} command succeeded - lock state is correct")
+                                    return True
+                                else:
+                                    expected_state = "LOCKED" if expected_locked else "UNLOCKED"
+                                    actual_state = "LOCKED" if actual_locked else "UNLOCKED"
+                                    error_msg = f"{action} command failed - expected {expected_state}, got {actual_state}"
+                                    _LOGGER.error(error_msg)
+                                    print(f"DEBUG: {error_msg}")
+                                    raise UltraloqApiError(error_msg)
+                                    
+                            except UltraloqApiError:
+                                # Re-raise API errors (including our state verification error)
+                                raise
+                            except Exception as status_err:
+                                _LOGGER.warning("Could not verify lock status after %s: %s", action, status_err)
+                                print(f"DEBUG: Could not verify lock status after {action}: {status_err}")
+                                # Still return True since the API call succeeded, just couldn't verify
+                                return True
+                        else:
+                            _LOGGER.error("%s failed with code %s for %s", action, result.get("code"), uuid)
+                            raise UltraloqApiError(f"{action} failed: {result.get('description', 'Unknown error')}")
+                    except Exception as json_err:
+                        _LOGGER.error("Failed to parse %s response JSON: %s", action, json_err)
+                        raise UltraloqApiError(f"Invalid {action} response format: {response_text[:100]}")
                 else:
-                    _LOGGER.error("Lock toggle request failed with status %s for %s", response.status, uuid)
-                    raise UltraloqApiError(f"Lock toggle request failed with status {response.status}")
+                    response_text = await response.text()
+                    _LOGGER.error("%s request failed with status %s for %s: %s", action, response.status, uuid, response_text[:200])
+                    raise UltraloqApiError(f"{action} request failed with status {response.status}")
 
         except aiohttp.ClientError as err:
-            _LOGGER.error("Network error during lock toggle for %s: %s", uuid, err)
+            _LOGGER.error("Network error during %s for %s: %s", action, uuid, err)
             raise UltraloqApiError(f"Network error: {err}") from err
 
     @property
