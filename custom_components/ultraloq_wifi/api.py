@@ -44,18 +44,18 @@ class UltraloqApiClient:
         self._api_token: str | None = None
         self._api_base_url: str | None = None
         
-        # Set default headers for all requests
-        default_headers = {
+        # Store default headers for use in requests
+        self._default_headers = {
             "User-Agent": USER_AGENT,
             "X-Api-Version": "3.3",
             "X-Build": "Release",
             "X-Stage": "Release",
         }
-        self._session.headers.update(default_headers)
 
     async def _get_api_token(self) -> str:
         """Get API token from token endpoint."""
         headers = {
+            **self._default_headers,
             "Content-Type": "application/json; charset=utf-8",
         }
 
@@ -143,6 +143,7 @@ class UltraloqApiClient:
 
         # Step 2: Use token to authenticate with credentials
         headers = {
+            **self._default_headers,
             "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
         }
 
@@ -220,6 +221,7 @@ class UltraloqApiClient:
             raise UltraloqAuthError("Not authenticated - no API token")
 
         headers = {
+            **self._default_headers,
             "Content-Type": "application/x-www-form-urlencoded",
         }
 
@@ -253,7 +255,7 @@ class UltraloqApiClient:
         if not self._api_token:
             raise UltraloqAuthError("Not authenticated - no API token")
 
-        headers = {}
+        headers = self._default_headers.copy()
 
         # Create multipart form data
         data = aiohttp.FormData()
@@ -317,7 +319,7 @@ class UltraloqApiClient:
         if not self._api_token:
             raise UltraloqAuthError("Not authenticated - no API token")
 
-        headers = {}
+        headers = self._default_headers.copy()
 
         # Create multipart form data
         data = aiohttp.FormData()
@@ -375,6 +377,7 @@ class UltraloqApiClient:
             raise UltraloqAuthError("Not authenticated - no API token")
 
         headers = {
+            **self._default_headers,
             "Content-Type": "application/x-www-form-urlencoded",
         }
 
